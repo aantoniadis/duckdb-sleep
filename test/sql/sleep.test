@@ -1,0 +1,170 @@
+# name: test/sql/sleep.test
+# description: Test sleep, sleep_for, and sleep_until functions
+# group: [sql]
+
+# Load the extension
+require sleep
+
+# Test sleep with small duration (0.01 seconds = 10ms)
+statement ok
+SELECT sleep(0.01);
+
+# Test sleep with zero (should return immediately)
+statement ok
+SELECT sleep(0);
+
+# Test sleep with negative (should return immediately)
+statement ok
+SELECT sleep(-1);
+
+# Test sleep with NULL
+statement ok
+SELECT sleep(NULL);
+
+# Test sleep returns NULL
+query I
+SELECT sleep(0.001) IS NULL;
+----
+true
+
+# Test sleep_for with small interval
+statement ok
+SELECT sleep_for(INTERVAL '10 milliseconds');
+
+# Test sleep_for with zero interval
+statement ok  
+SELECT sleep_for(INTERVAL '0 seconds');
+
+# Test sleep_for with NULL
+statement ok
+SELECT sleep_for(NULL);
+
+# Test sleep_for with various interval formats
+statement ok
+SELECT sleep_for(INTERVAL '1 second');
+
+statement ok
+SELECT sleep_for(INTERVAL '0.05 seconds');
+
+# Test sleep_for returns NULL
+query I
+SELECT sleep_for(INTERVAL '1 millisecond') IS NULL;
+----
+true
+
+# Test sleep_until with future timestamp
+statement ok
+SELECT sleep_until(CURRENT_TIMESTAMP::TIMESTAMP + INTERVAL '10 milliseconds');
+
+# Test sleep_until with past timestamp (should return immediately)
+statement ok
+SELECT sleep_until(CURRENT_TIMESTAMP::TIMESTAMP - INTERVAL '1 hour');
+
+# Test sleep_until with NULL
+statement ok
+SELECT sleep_until(NULL);
+
+# Test sleep_until returns NULL
+query I
+SELECT sleep_until(CURRENT_TIMESTAMP::TIMESTAMP + INTERVAL '1 millisecond') IS NULL;
+----
+true
+
+# Test that functions exist in the catalog
+query I
+SELECT count(*) FROM duckdb_functions() 
+WHERE function_name IN ('sleep', 'sleep_for', 'sleep_until');
+----
+3
+
+# Verify function signatures
+query III
+SELECT 
+    function_name,
+    return_type,
+    parameters
+FROM duckdb_functions() 
+WHERE function_name = 'sleep';
+----
+sleep	"NULL"	[col0]
+
+query III
+SELECT 
+    function_name,
+    return_type,
+    parameters
+FROM duckdb_functions() 
+WHERE function_name = 'sleep_for';
+----
+sleep_for	"NULL"	[col0]
+
+query III
+SELECT 
+    function_name,
+    return_type,
+    parameters
+FROM duckdb_functions() 
+WHERE function_name = 'sleep_until';
+----
+sleep_until	"NULL"	[col0]
+
+# Test that sleep works in a larger query context
+statement ok
+SELECT i, sleep(0.001) FROM range(3) t(i);
+
+# Test sleep with aggregation context
+query I
+SELECT count(*) FROM (
+    SELECT sleep(0.001) FROM range(5)
+);
+----
+5
+
+#
+# Edge Cases and Error Handling
+#
+
+# Test with very small values (fractional milliseconds)
+statement ok
+SELECT sleep(0.0001);
+
+# Test NaN handling (should error)
+statement error
+SELECT sleep('NaN'::DOUBLE);
+----
+Sleep duration cannot be NaN
+
+# Test sleep_for with negative interval (should return immediately)
+statement ok
+SELECT sleep_for(INTERVAL '-1 second');
+
+# Test sleep_for with complex interval
+statement ok
+SELECT sleep_for(INTERVAL '50 milliseconds');
+
+# Test sleep_until with very close future timestamp
+statement ok
+SELECT sleep_until(CURRENT_TIMESTAMP::TIMESTAMP + INTERVAL '1 millisecond');
+
+#
+# PostgreSQL Compatibility Tests
+#
+
+# Test that return value is always NULL (PostgreSQL compatibility)
+query I
+SELECT sleep(0.001) IS NULL AND sleep_for(INTERVAL '1 millisecond') IS NULL;
+----
+true
+
+# Test function works in WHERE clause
+query I
+SELECT count(*) FROM range(3) WHERE sleep(0.001) IS NULL;
+----
+3
+
+# Test function works in CASE expression
+query I
+SELECT CASE WHEN sleep(0.001) IS NULL THEN 'passed' ELSE 'failed' END as result;
+----
+passed
+
